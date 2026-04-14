@@ -1,7 +1,6 @@
 ---
-layout: page
-title: Talks
-permalink: /talks/
+icon: fas fa-microphone
+order: 5
 ---
 
 I regularly speak at [ACCU York](https://www.meetup.com/accu-york/) and other meetups. Some of my talks are recorded on [YouTube](https://www.youtube.com/playlist?list=PL3BB_KmKhV9NG-ndaqHjXSGEtCbA2HlMm).

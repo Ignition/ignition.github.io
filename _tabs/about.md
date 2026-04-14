@@ -1,7 +1,6 @@
 ---
-layout: page
-title: About
-permalink: /about/
+icon: fas fa-info-circle
+order: 4
 ---
 
 Hi, I'm Gareth, a software engineer from York with Welsh heritage 🏴󠁧󠁢󠁷󠁬󠁳󠁿, currently making graph databases go faster at [Memgraph](https://memgraph.com/).
