@@ -11,4 +11,6 @@ Outside of work, I coordinate [ACCU York](https://www.meetup.com/accu-york/), a 
 
 When I'm not at a keyboard, you might find me climbing or on a jog. I'm a modern boardgame obsessive, feel free to judge my collection on [BoardGameGeek](https://boardgamegeek.com/user/thth).
 
+You can subscribe to this blog via [RSS](/feed.xml).
+
 Slava Ukraine 🇺🇦

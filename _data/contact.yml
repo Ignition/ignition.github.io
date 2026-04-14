@@ -1,0 +1,13 @@
+- type: github
+  icon: "fab fa-github"
+
+- type: mastodon
+  icon: "fab fa-mastodon"
+  url: "https://fosstodon.org/@glloyd"
+
+- type: boardgamegeek
+  icon: "fas fa-dice"
+  url: "https://boardgamegeek.com/user/thth"
+
+- type: rss
+  icon: "fas fa-rss"
