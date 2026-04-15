@@ -50,7 +50,7 @@ No. We've made the two operations explicit: `tmp = sellIn - 1` is pure calculati
 
 The goal is simple: **separate calculation from mutation**. Calculate everything first, using names for intermediate values, and defer the actual mutations until as late as possible. This gives you a window where you can reason about the calculations without worrying about what's been modified.
 
-Fowler's **Split Temporary Variable** refactoring captures a related idea: a variable should represent one concept, not be reused for multiple purposes. We're taking that further, not just avoiding reuse, but making the flow of values explicit.
+Fowler's **Split Variable** refactoring captures a related idea: a variable should represent one concept, not be reused for multiple purposes. We're taking that further, not just avoiding reuse, but making the flow of values explicit.
 
 ## Propagating the Known Value
 
@@ -214,7 +214,7 @@ else
 sellIn = sellIn - 1;
 ```
 
-Now the branches differ only in the value of `updateAmount`. The `quality` update is identical in both. That's a common suffix we can factor out:
+Now the branches differ only in the value of `updateAmount`. The `quality` update is identical in both. That's a common suffix we can factor out, Fowler's **Slide Statements** (previously called **Consolidate Duplicate Conditional Fragments**):
 
 ```cpp
 int updateAmount;
@@ -259,13 +259,15 @@ Here's what we used:
 
 | Step | Fowler Name | Compiler Name |
 |---|---|---|
-| Separate calculation from mutation | Split Temporary Variable | — |
+| Separate calculation from mutation | Split Variable | — |
 | Substitute known value | — | Copy propagation |
 | Move mutation later | Slide Statements | Code sinking |
 | Remove temporary | Inline Variable | Inlining |
 | Duplicate into branches | — | Tail duplication |
 | Combine operations | — | Fusion |
-| Name a concept | Extract Variable | — |
+| Extract the constant | Extract Variable | — |
+| Factor out common suffix | Slide Statements | Code factoring |
+| Collapse conditional to expression | — | If-conversion |
 
 The compiler column is more complete because compiler engineers have catalogued these transformations for decades. They're proven correct, applied billions of times daily, and encoded in software that doesn't forget.
 
