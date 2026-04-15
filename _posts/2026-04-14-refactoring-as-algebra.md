@@ -149,7 +149,7 @@ But this duplication is _preparatory_. We've temporarily made the code worse to 
 
 Fowler has a concept for this: **preparatory refactoring**. Sometimes you refactor not to improve the code directly, but to make a subsequent change easier. You're setting up the board. The duplication is scaffolding.
 
-Compilers do this routinely. They call it **tail duplication** or **jump threading**, copying code into multiple paths to enable path-specific optimisation. Loop unswitching is a variant: duplicating an entire loop body to hoist a conditional out of the hot path.
+Compilers do this routinely. They call it **tail duplication**, copying code into multiple paths to enable path-specific optimisation. Loop unswitching is a related idea: duplicating an entire loop body to hoist a loop-invariant conditional out of the hot path.
 
 But here's the gap: _this pattern has no name in Fowler's catalogue_. The developer-facing refactoring literature doesn't call out deliberate duplication as a valid move. It may be a blind spot.
 
