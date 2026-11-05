@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRESS</title>
+<style>
+  :root {
+    --wall: #e9e5df;
+    --ink: #3a3a40;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    background:
+      radial-gradient(120% 90% at 30% 10%, #f3efe9 0%, var(--wall) 55%, #ddd8d1 100%);
+    color: var(--ink);
+    font: 400 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Flames sit above the page so they engulf the button rather than frame it.
+     pointer-events:none keeps the button underneath clickable. */
+  #fire {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  main {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 2rem;
+  }
+
+  .press-btn {
+    appearance: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    border-radius: 14px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .press-btn canvas {
+    display: block;
+    width: 310px;
+    height: 250px;
+  }
+  .press-btn:focus-visible {
+    outline: 3px dashed #bb2f26;
+    outline-offset: 6px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .readout {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 13px;
+    opacity: 0.6;
+    /* Rides the burn so it stays legible once the page goes dark. */
+    color: color-mix(in srgb, var(--ink), #ffe0b0 calc(var(--burn, 0) * 100%));
+    text-shadow: 0 1px 4px rgba(0, 0, 0, calc(var(--burn, 0) * 0.85));
+  }
+</style>
+</head>
+<body>
+
+<canvas id="fire" aria-hidden="true"></canvas>
+
+<main>
+  <button class="press-btn" id="pressBtn" type="button">
+    <span class="visually-hidden">Press</span>
+    <canvas id="btnCanvas" aria-hidden="true"></canvas>
+  </button>
+  <p class="readout">pressed <span id="count">0</span> times</p>
+</main>
+
+<script>
+(() => {
+  const RED = '#bb2f26';
+  const INK = '#2f2f36';
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  // Shared ignition state: the button sets it, the flames read it.
+  let heat = 0;            // 0 = cold source, 1 = white hot
+  let fireLive = false;
+  // Flames outlive the source: they keep rising after it goes cold. Lighting
+  // follows this rather than heat, or the room snaps bright mid-inferno.
+  let ambient = 0;
+  // Paper keeps what you do to it. This only ever rises, so a released box
+  // stays creased and part-split instead of springing back pristine.
+  let damage = 0;
+
+  // =========================================================================
+  // The button
+  // =========================================================================
+  const VW = 540, VH = 440;          // virtual drawing space
+  const canvas = document.getElementById('btnCanvas');
+  const button = document.getElementById('pressBtn');
+  const countEl = document.getElementById('count');
+  const ctx = canvas.getContext('2d');
+
+  // --- deterministic jitter -------------------------------------------------
+  // Every frame replays the same pseudo-random sequence in the same order, so
+  // the hand-drawn wobble stays put instead of boiling while the button moves.
+  function mulberry32(seed) {
+    return function () {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let rand = mulberry32(1);
+  const rng = (lo, hi) => lo + rand() * (hi - lo);
+
+  // --- hand-drawn primitives ------------------------------------------------
+  function roughLine(x1, y1, x2, y2, width, color, bow = 1) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const o = Math.min(2.6, len * 0.02) + 0.7;
+
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    for (let pass = 0; pass < 2; pass++) {
+      const sx = x1 + rng(-o, o), sy = y1 + rng(-o, o);
+      const ex = x2 + rng(-o, o), ey = y2 + rng(-o, o);
+      const mx = (sx + ex) / 2 + nx * rng(-o, o) * 1.7 * bow;
+      const my = (sy + ey) / 2 + ny * rng(-o, o) * 1.7 * bow;
+      ctx.globalAlpha = pass === 0 ? 1 : 0.5;
+      ctx.lineWidth = width * (pass === 0 ? 1 : 0.7);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+
+  function quadPath(q) {
+    ctx.beginPath();
+    ctx.moveTo(q[0].x, q[0].y);
+    for (let i = 1; i < q.length; i++) ctx.lineTo(q[i].x, q[i].y);
+    ctx.closePath();
+  }
+
+  function roughQuad(q, width, color) {
+    for (let i = 0; i < q.length; i++) {
+      roughLine(q[i].x, q[i].y, q[(i + 1) % q.length].x, q[(i + 1) % q.length].y, width, color);
+    }
+  }
+
+  // Strokes spanning the gap between two edges, clipped to the face so the
+  // pattern runs off the sides the way marker hatching does on paper.
+  function hatch(clip, a0, a1, b0, b1, n, width, skew) {
+    ctx.save();
+    quadPath(clip);
+    ctx.clip();
+    for (let i = 0; i <= n; i++) {
+      const s = i / n;
+      const p = lerp(a0, a1, s);
+      const q = lerp(b0, b1, s + skew);
+      roughLine(p.x, p.y, q.x, q.y, width, RED, 1.6);
+    }
+    ctx.restore();
+  }
+
+  // --- paper grain ----------------------------------------------------------
+  const grain = (() => {
+    const g = document.createElement('canvas');
+    g.width = g.height = 96;
+    const gc = g.getContext('2d');
+    const img = gc.createImageData(96, 96);
+    const r = mulberry32(99);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 120 + r() * 135;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = r() < 0.5 ? 26 : 10;
+    }
+    gc.putImageData(img, 0, 0);
+    return ctx.createPattern(g, 'repeat');
+  })();
+
+  function paper(q, tint) {
+    quadPath(q);
+    ctx.fillStyle = tint;
+    ctx.fill();
+    ctx.save();
+    quadPath(q);
+    ctx.clip();
+    ctx.fillStyle = grain;
+    ctx.globalAlpha = 0.5;
+    quadPath(q);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- the word -------------------------------------------------------------
+  function drawLabel(TL, TR, BL, far) {
+    const ux = TR.x - TL.x, uy = TR.y - TL.y;
+    const ul = Math.hypot(ux, uy);
+    const vx = BL.x - TL.x, vy = BL.y - TL.y;
+    const vl = Math.hypot(vx, vy);
+    const cx = (TL.x + TR.x + BL.x + far.x) / 4;
+    const cy = (TL.y + TR.y + BL.y + far.y) / 4;
+
+    ctx.save();
+    // Unit basis of the top face: rotates and shears the text onto the plane
+    // without rescaling it.
+    ctx.transform(ux / ul, uy / ul, vx / vl, vy / vl, cx, cy);
+
+    const size = 62;
+    ctx.font = `600 ${size}px "Segoe Print", "Bradley Hand", "Comic Sans MS", ui-rounded, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = INK;
+
+    const letters = [...'PRESS'];
+    const gap = size * 0.13;
+    const widths = letters.map(ch => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + gap * (letters.length - 1);
+
+    let x = -total / 2;
+    for (let i = 0; i < letters.length; i++) {
+      ctx.save();
+      ctx.translate(x + widths[i] / 2, rng(-2, 2));
+      ctx.rotate(rng(-0.045, 0.045));
+      ctx.fillText(letters[i], 0, 0);
+      ctx.restore();
+      x += widths[i] + gap;
+    }
+    ctx.restore();
+  }
+
+  // --- crushing -------------------------------------------------------------
+  const INTERIOR = '#473a32';      // shadowed inside of the box, seen through tears
+  const TEAR_EDGE = '#ded7cb';     // exposed paper fibre, pale against the interior
+
+  const unit = (x, y) => {
+    const d = Math.hypot(x, y) || 1;
+    return { x: x / d, y: y / d };
+  };
+  const OUT_FRONT = unit(-0.22, 1);   // front panel buckles toward the viewer
+  const OUT_LEFT = unit(-1, 0.22);    // left panel buckles out to the side
+
+  // A crushed panel keeps its length, so the slack has to go somewhere: the
+  // two extrusion edges bow outward and a crease runs between their midpoints.
+  function buckle(pTop, pBot, dir, mag) {
+    return {
+      x: (pTop.x + pBot.x) / 2 + dir.x * mag,
+      y: (pTop.y + pBot.y) / 2 + dir.y * mag,
+    };
+  }
+
+  function strokePolyline(pts, width, color) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      roughLine(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, width, color, 0.8);
+    }
+  }
+
+  // A ragged line across the lid, from its left edge to its right, along which
+  // the box gives way. Endpoints stay put so the halves meet at the sides.
+  function lidCrack(TL, TR, BR, BL, depth, amp) {
+    const a = lerp(BL, TL, depth);
+    const b = lerp(BR, TR, depth);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const n = 7;
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const s = i / n;
+      const j = i === 0 || i === n ? 0 : rng(-amp, amp);
+      pts.push({ x: a.x + dx * s + nx * j, y: a.y + dy * s + ny * j });
+    }
+    return pts;
+  }
+
+  const bilerp = (TL, TR, BL, BR, u, v) => lerp(lerp(TL, TR, u), lerp(BL, BR, u), v);
+
+  // Creases the paper keeps once it has been crushed. Seeded separately so the
+  // same folds reappear in the same places every frame.
+  function crumple(TL, TR, BL, BR, alpha) {
+    if (alpha < 0.02) return;
+    const ink = `rgba(122,112,100,${alpha})`;
+    const r = mulberry32(2024);
+    for (let i = 0; i < 6; i++) {
+      const u = r(), v = r();
+      const p = bilerp(TL, TR, BL, BR, u, v);
+      const q = bilerp(TL, TR, BL, BR, u + (r() - 0.5) * 0.55, v + (r() - 0.5) * 0.5);
+      roughLine(p.x, p.y, q.x, q.y, 1.5, ink, 1.6);
+    }
+  }
+
+  // A tear: a ragged wedge, widest where it starts at the panel edge and
+  // closing to a point, with the box's dark interior showing through.
+  function rip(face, from, to, halfW) {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const segs = 5;
+
+    const edge = (sign) => {
+      const pts = [];
+      for (let i = 0; i <= segs; i++) {
+        const s = i / segs;
+        const w = halfW * (1 - s) + rng(-0.45, 0.45) * halfW;
+        pts.push({
+          x: from.x + dx * s + nx * sign * w,
+          y: from.y + dy * s + ny * sign * w,
+        });
+      }
+      return pts;
+    };
+    const a = edge(1), b = edge(-1);
+
+    ctx.save();
+    quadPath(face);
+    ctx.clip();
+
+    quadPath(a.concat(b.slice().reverse()));
+    ctx.fillStyle = INTERIOR;
+    ctx.fill();
+
+    for (let i = 0; i < segs; i++) {
+      roughLine(a[i].x, a[i].y, a[i + 1].x, a[i + 1].y, 1.5, TEAR_EDGE, 0.4);
+      roughLine(b[i].x, b[i].y, b[i + 1].x, b[i + 1].y, 1.5, TEAR_EDGE, 0.4);
+    }
+    ctx.restore();
+  }
+
+  // --- geometry -------------------------------------------------------------
+  // Bottom of the box is pinned to the page; the top face rides up and down it.
+  const BASE = [
+    { x: 65, y: 120 },    // back-left
+    { x: 365, y: 146 },   // back-right
+    { x: 386, y: 362 },   // front-right
+    { x: 80, y: 346 },    // front-left
+  ];
+  const DX = 56, DY = 98;   // extrusion offset at full height
+
+  function drawButton(t) {
+    rand = mulberry32(1);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = canvas.clientWidth || 310;
+    const cssH = canvas.clientHeight || 250;
+    if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const s = Math.min((cssW * dpr) / VW, (cssH * dpr) / VH);
+    ctx.setTransform(s, 0, 0, s, (cssW * dpr - VW * s) / 2, (cssH * dpr - VH * s) / 2);
+
+    const crush = Math.max(0, Math.min(1, (RAISED - t) / (RAISED - DOWN)));
+
+    // The right side gives way further than the left, so the lid goes over at
+    // an angle rather than sinking flat.
+    const TILT = [1 + 0.05 * crush, 1 - 0.15 * crush, 1 - 0.15 * crush, 1 + 0.05 * crush];
+    const top = BASE.map((p, i) => ({
+      x: p.x + DX * t * TILT[i],
+      y: p.y - DY * t * TILT[i],
+    }));
+    const [TL, TR, BR, BL] = top;
+    const [bTL, , bBR, bBL] = BASE;
+
+    // contact shadow, tight and dark when the button is down
+    const shx = (bBL.x + bBR.x) / 2;
+    const shy = (bBL.y + bBR.y) / 2 + 26;
+    const spread = 175 - 28 * (1 - t);
+    const g = ctx.createRadialGradient(shx, shy, 0, shx, shy, spread);
+    g.addColorStop(0, `rgba(58,48,40,${0.38 + 0.14 * (1 - t)})`);
+    g.addColorStop(1, 'rgba(58,48,40,0)');
+    ctx.save();
+    ctx.translate(shx, shy);
+    ctx.scale(1, 0.26);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, spread, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Backing in the box's own silhouette. The panels buckle in different
+    // directions and pull apart at the corners; this is what shows through
+    // those gaps, so a split reveals the inside of the box, not the page.
+    quadPath([TL, TR, BR, bBR, bBL, bTL]);
+    ctx.fillStyle = INTERIOR;
+    ctx.fill();
+
+    // Panels are only a few pixels tall once crushed, so they fold modestly;
+    // the lid is the surface with room to show the box coming apart.
+    // How far the damage shows right now: fully while held down, and partly
+    // once released, so the box carries its creases between presses.
+    const open = Math.max(crush, damage * 0.34);
+    const bulge = 0.12 * Math.hypot(DX, DY) * Math.max(crush, damage * 0.22);
+    const creaseInk = `rgba(118,106,94,${0.22 + 0.55 * Math.max(crush, damage * 0.7)})`;
+    const torn = crush > 0.05 || damage > 0.01;
+
+    // left face: narrow strip, single-direction hatching
+    const lBack = buckle(TL, bTL, OUT_LEFT, bulge);
+    const lFront = buckle(BL, bBL, OUT_LEFT, bulge);
+    const leftFace = [TL, lBack, bTL, bBL, lFront, BL];
+    paper(leftFace, '#f1eee8');
+    hatch(leftFace, TL, BL, bTL, bBL, 7, 2.6, 0.07);
+    roughQuad(leftFace, 4.2, RED);
+    if (torn) {
+      roughLine(lBack.x, lBack.y, lFront.x, lFront.y, 2.2, creaseInk, 0.5);
+      rip(leftFace, lerp(bTL, bBL, 0.45), lerp(TL, BL, 0.45), 8 * open);
+    }
+
+    // front face: cross-hatched diamonds
+    const fLeft = buckle(BL, bBL, OUT_FRONT, bulge);
+    const fRight = buckle(BR, bBR, OUT_FRONT, bulge);
+    const frontFace = [BL, BR, fRight, bBR, bBL, fLeft];
+    paper(frontFace, '#ebe7e0');
+    // The extrusion already leans these strokes left; offsetting both sets by
+    // that lean keeps the diamonds symmetric at every press depth.
+    const lean = (DX * t) / Math.hypot(BR.x - BL.x, BR.y - BL.y);
+    hatch(frontFace, BL, BR, bBL, bBR, 12, 2.6, lean + 0.13);
+    hatch(frontFace, BL, BR, bBL, bBR, 12, 2.6, lean - 0.13);
+    roughQuad(frontFace, 4.2, RED);
+    if (torn) {
+      roughLine(fLeft.x, fLeft.y, fRight.x, fRight.y, 2.2, creaseInk, 0.5);
+      rip(frontFace, lerp(bBL, bBR, 0.3), lerp(BL, BR, 0.3), 13 * open);
+      rip(frontFace, lerp(bBL, bBR, 0.68), lerp(BL, BR, 0.68), 10 * open);
+    }
+
+    // The lid gives way along a tear across its middle, and the two halves
+    // settle at different angles, taking the word apart with them.
+    if (!torn) {
+      paper(top, '#faf8f3');
+      roughQuad(top, 4.6, RED);
+      drawLabel(TL, TR, BL, BR);
+    } else {
+      // Each half tears along its own line. Sharing one would hold the gap at
+      // a constant width and read as a drawn bar rather than a split.
+      const amp = 2 + 5 * open;
+      const crackA = lidCrack(TL, TR, BR, BL, 0.52, amp);
+      const crackB = lidCrack(TL, TR, BR, BL, 0.52, amp);
+      const a = crackA[0], b = crackA[crackA.length - 1];
+      const halves = [
+        { poly: [TL, TR].concat(crackA.slice().reverse()), rim: [a, TL, TR, b],
+          edge: crackA, off: { x: 3.5 * open, y: -2.6 * open } },
+        { poly: crackB.concat([BR, BL]), rim: [b, BR, BL, a],
+          edge: crackB, off: { x: -5.5 * open, y: 5.0 * open } },
+      ];
+      for (const h of halves) {
+        ctx.save();
+        ctx.translate(h.off.x, h.off.y);
+        paper(h.poly, '#faf8f3');
+        ctx.save();
+        quadPath(h.poly);
+        ctx.clip();
+        // Reseeded so both halves jitter the letters identically and the torn
+        // word still lines up across the gap.
+        rand = mulberry32(404);
+        drawLabel(TL, TR, BL, BR);
+        crumple(TL, TR, BL, BR, 0.55 * damage);
+        ctx.restore();
+        strokePolyline(h.rim, 4.6, RED);
+        strokePolyline(h.edge, 2.0, TEAR_EDGE);
+        ctx.restore();
+      }
+    }
+
+    // Firelight on the paper. Source-atop so it touches only the button's own
+    // pixels: a plain fill would tint the transparent canvas into a visible
+    // rectangle. Darkening is left to the full-page pass, which covers this.
+    if (ambient > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+
+      const gl = ctx.createRadialGradient(shx, shy - 40, 0, shx, shy - 40, 480);
+      gl.addColorStop(0, `rgba(255,206,132,${0.90 * ambient})`);
+      gl.addColorStop(0.5, `rgba(255,150,54,${0.68 * ambient})`);
+      gl.addColorStop(1, `rgba(255,96,24,${0.42 * ambient})`);
+      ctx.fillStyle = gl;
+      ctx.fillRect(0, 0, VW, VH);
+
+      ctx.restore();
+    }
+  }
+
+  // =========================================================================
+  // The flames: PSX Doom fire across the whole page
+  // =========================================================================
+  // A coarse grid of heat values, seeded white-hot along a row below the
+  // viewport and pulled upward each frame, losing steps of heat and drifting
+  // sideways at random.
+  const FIRE_PALETTE = new Uint8Array([
+    0x07,0x07,0x07, 0x1f,0x07,0x07, 0x2f,0x0f,0x07, 0x47,0x0f,0x07,
+    0x57,0x17,0x07, 0x67,0x1f,0x07, 0x77,0x1f,0x07, 0x8f,0x27,0x07,
+    0x9f,0x2f,0x07, 0xaf,0x3f,0x07, 0xbf,0x47,0x07, 0xc7,0x47,0x07,
+    0xdf,0x4f,0x07, 0xdf,0x57,0x07, 0xdf,0x57,0x07, 0xd7,0x5f,0x07,
+    0xd7,0x5f,0x07, 0xd7,0x67,0x0f, 0xcf,0x6f,0x0f, 0xcf,0x77,0x0f,
+    0xcf,0x7f,0x0f, 0xcf,0x87,0x17, 0xc7,0x87,0x17, 0xc7,0x8f,0x17,
+    0xc7,0x97,0x1f, 0xd7,0x9b,0x1b, 0xdb,0xa0,0x1d, 0xdf,0xa5,0x22,
+    0xe3,0xab,0x26, 0xe7,0xb1,0x2b, 0xeb,0xb8,0x33, 0xef,0xc0,0x3d,
+    0xf3,0xc9,0x4a, 0xf7,0xd8,0x62, 0xfb,0xe6,0x8f, 0xfd,0xf2,0xc0,
+    0xff,0xff,0xff,
+  ]);
+  // The upper entries diverge from the PSX original, whose olive-greens only
+  // read as flame on a black screen and look like grass over a lit page.
+  // Warmed to amber and gold, the ramp stays white-hot to ember throughout.
+  const MAX_HEAT = 36;
+
+  // The coolest cells are the ragged fringe at the flame's edge; fading them
+  // out keeps that fringe smoky instead of a scatter of muddy dark specks.
+  // The cap stays just short of opaque, evenly across the whole layer: lower
+  // and the darkened page greys the fire out, higher and it flattens. The
+  // button is simply engulfed at full burn and surfaces again as it dies.
+  const ALPHA_RAMP = (() => {
+    const a = new Uint8Array(MAX_HEAT + 1);
+    for (let i = 0; i <= MAX_HEAT; i++) {
+      a[i] = i === 0 ? 0 : Math.round(240 * Math.min(1, Math.pow(i / 6, 1.2)));
+    }
+    return a;
+  })();
+  const CELL = 6;           // viewport pixels per fire cell
+  const HIDDEN_ROWS = 5;    // source rows parked below the viewport
+
+  // How dark the room gets at full burn. The Doom palette's olive midtones
+  // only read as flame against something dark; on a bright page they go green.
+  const ROOM_DARKEN = 0.8;
+
+  const fireEl = document.getElementById('fire');
+  const fx = fireEl.getContext('2d');
+
+  let FW = 0, FH = 0, visRows = 0, decay = 0.4, coolFrames = 120;
+  let firePixels = null, fireImage = null, fireBuf = null, bufCtx = null;
+
+  function sizeFire() {
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
+    fireEl.width = w;
+    fireEl.height = h;
+
+    visRows = Math.ceil(h / CELL) + 1;
+    FW = Math.ceil(w / CELL) + 1;
+    FH = visRows + HIDDEN_ROWS;
+
+    firePixels = new Uint8Array(FW * FH);
+    fireBuf = document.createElement('canvas');
+    fireBuf.width = FW;
+    fireBuf.height = FH;
+    bufCtx = fireBuf.getContext('2d');
+    fireImage = bufCtx.createImageData(FW, FH);
+
+    // A cell can only shed 36 steps before it goes out, so reach is set purely
+    // by how often it cools. Tie that to the viewport or the flames stall near
+    // the floor on a tall window.
+    decay = Math.min(0.6, Math.max(0.12, MAX_HEAT / Math.max(12, visRows * 0.92)));
+
+    // Roughly how long the last flames take to clear the top of the screen.
+    coolFrames = Math.max(30, Math.round(visRows * 1.3));
+  }
+
+  function stepFire() {
+    // Jittering the source per column, with occasional cold gaps, breaks the
+    // palette into tongues instead of flat horizontal colour bands.
+    const src = Math.round(MAX_HEAT * heat);
+    const row = (FH - 1) * FW;
+    for (let x = 0; x < FW; x++) {
+      if (src === 0) {
+        firePixels[row + x] = 0;
+      } else if (Math.random() < 0.06) {
+        firePixels[row + x] = Math.max(0, src - 14);
+      } else {
+        firePixels[row + x] = Math.max(0, src - ((Math.random() * 7) | 0));
+      }
+    }
+    for (let x = 0; x < FW; x++) {
+      for (let y = 1; y < FH; y++) {
+        const from = y * FW + x;
+        const rnd = Math.round(Math.random() * 3) & 3;
+        const to = from - rnd + 1 - FW;
+        if (to < 0) continue;
+        const v = firePixels[from] - (Math.random() < decay ? 1 : 0);
+        firePixels[to] = v < 0 ? 0 : v;
+      }
+    }
+  }
+
+  function drawFire() {
+    fx.setTransform(1, 0, 0, 1, 0, 0);
+    fx.clearRect(0, 0, fireEl.width, fireEl.height);
+    if (!fireLive) return;
+
+    const d = fireImage.data;
+    for (let i = 0; i < firePixels.length; i++) {
+      const idx = firePixels[i];
+      const p = idx * 3;
+      const o = i * 4;
+      d[o] = FIRE_PALETTE[p];
+      d[o + 1] = FIRE_PALETTE[p + 1];
+      d[o + 2] = FIRE_PALETTE[p + 2];
+      d[o + 3] = ALPHA_RAMP[idx];
+    }
+    bufCtx.putImageData(fireImage, 0, 0);
+
+    // Night falls first, then the firelight washes back up the page, and only
+    // then the flames themselves.
+    fx.fillStyle = `rgba(13,7,6,${ROOM_DARKEN * ambient})`;
+    fx.fillRect(0, 0, fireEl.width, fireEl.height);
+
+    const glow = fx.createLinearGradient(0, fireEl.height, 0, 0);
+    glow.addColorStop(0, `rgba(255,120,30,${0.40 * ambient})`);
+    glow.addColorStop(0.45, `rgba(255,80,20,${0.13 * ambient})`);
+    glow.addColorStop(1, 'rgba(255,60,0,0)');
+    fx.fillStyle = glow;
+    fx.fillRect(0, 0, fireEl.width, fireEl.height);
+
+    fx.imageSmoothingEnabled = false;
+    // Source rows are drawn past the bottom edge, hiding the white-hot slab.
+    fx.drawImage(fireBuf, 0, 0, fireEl.width, FH * (fireEl.height / visRows));
+
+  }
+
+  // =========================================================================
+  // Press, spring, ignition
+  // =========================================================================
+  const RAISED = 1, DOWN = 0.24;
+  const BURN_MS = 1800;    // a tap burns this long; holding sustains it
+  const FIRE_AFTER = 5;    // presses that only crush the box before it lights
+
+  let t = RAISED, vel = 0, target = RAISED, raf = 0;
+  let held = false, burnUntil = 0, cooldown = 0;
+  let presses = 0;
+
+  function frame() {
+    raf = 0;
+
+    const falling = target < t;
+    vel += (target - t) * (falling ? 0.46 : 0.26);
+    vel *= falling ? 0.52 : 0.66;
+    t = Math.max(0.18, Math.min(1.1, t + vel));
+
+    const settled = Math.abs(target - t) <= 0.0015 && Math.abs(vel) <= 0.0015;
+    if (settled) {
+      t = target;
+      vel = 0;
+    }
+
+    const burning = !reduced.matches && presses >= FIRE_AFTER
+      && (held || performance.now() < burnUntil);
+    const want = burning ? 1 : 0;
+    heat += (want - heat) * (want > heat ? 0.55 : 0.045);
+    if (heat < 0.004) heat = 0;
+
+    // Keep simulating after the source goes cold so the last flames rise and
+    // fade out instead of vanishing with the heat.
+    if (heat > 0) cooldown = coolFrames;
+    else if (cooldown > 0) cooldown--;
+
+    ambient = Math.max(heat, cooldown / coolFrames);
+    document.documentElement.style.setProperty('--burn', ambient.toFixed(3));
+
+    const wasLive = fireLive;
+    fireLive = heat > 0 || cooldown > 0;
+    if (fireLive) stepFire();
+
+    drawButton(t);
+    if (fireLive || wasLive) drawFire();
+
+    if (!settled || fireLive) raf = requestAnimationFrame(frame);
+  }
+
+  function run() {
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+
+  function setTarget(next) {
+    target = next;
+    if (reduced.matches) {
+      t = next;
+      vel = 0;
+    }
+    run();
+  }
+
+  function press() {
+    held = true;
+    presses++;
+    countEl.textContent = presses;
+    damage = Math.min(1, 0.42 + 0.145 * (presses - 1));
+    if (presses >= FIRE_AFTER) burnUntil = performance.now() + BURN_MS;
+    setTarget(DOWN);
+  }
+
+  function release() {
+    held = false;
+    setTarget(RAISED);
+  }
+
+  button.addEventListener('pointerdown', (e) => {
+    button.setPointerCapture(e.pointerId);
+    press();
+  });
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('blur', release);
+  button.addEventListener('keydown', (e) => {
+    if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) press();
+  });
+  button.addEventListener('keyup', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') release();
+  });
+
+  window.addEventListener('resize', () => {
+    sizeFire();
+    drawButton(t);
+    drawFire();
+  });
+
+  sizeFire();
+  drawButton(t);
+})();
+</script>
+</body>
+</html>

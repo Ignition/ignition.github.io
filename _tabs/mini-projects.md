@@ -14,3 +14,13 @@ Only the marks near the viewport exist in the DOM. The rest are built as they co
 The name is the whole reason it exists: 110yd reads as "Lloyd".
 
 [[live app](/110yd/)]
+
+## Press
+
+A big red button, drawn on a canvas as a cardboard box in rough pencil strokes with paper grain and hatched faces. Press it and the box crushes, and the creases it picks up stay: damage only ever accumulates, so a released box sits there dented rather than springing back pristine.
+
+The fifth press sets it on fire. The flames are a Doom-style heat grid seeded white hot below the viewport and dragged upward, cooling as they climb, with the palette warmed from the original olive toward amber so it reads as fire against a pale page rather than grass. The room darkens, firelight washes back up, and the lid tears across its middle so the two halves carry the word apart with them. A tap burns for a moment, holding the button sustains it.
+
+It is keyboard operable, and under `prefers-reduced-motion` the spring snaps and nothing catches light.
+
+[[live app](/press/)]
