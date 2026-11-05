@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>110yd - A Lloyd's Ruler</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .ruler-container {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 120px;
+            height: 100vh;
+            background: #fff;
+            border-right: 2px solid #333;
+            overflow: hidden;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            /* CSS containment for performance */
+            contain: layout style paint;
+        }
+
+        .ruler {
+            position: absolute;
+            width: 100%;
+            height: 3960in; /* 110 yards in CSS inches */
+            contain: layout style;
+        }
+
+        .ruler-mark {
+            position: absolute;
+            right: 0;
+            background: #333;
+            height: 1px;
+            min-height: 1px;
+            will-change: transform;
+            backface-visibility: hidden;
+            transform: translateZ(0);
+        }
+
+        .ruler-mark.yard { width: 100%; background: #ff4444; height: 3px; }
+        .ruler-mark.inch { width: 50px; }
+        .ruler-mark.half { width: 35px; }
+        .ruler-mark.quarter { width: 25px; }
+        .ruler-mark.eighth { width: 15px; }
+
+        .inch-labels {
+            position: absolute;
+            width: 100%;
+            height: 3960in;
+            pointer-events: none;
+            will-change: transform;
+            transform: translateZ(0);
+        }
+
+        .inch-label {
+            position: absolute;
+            right: 55px;
+            font-size: 10px;
+            font-weight: 500;
+            color: #333;
+            will-change: transform;
+            backface-visibility: hidden;
+        }
+
+        .yard-label {
+            position: absolute;
+            left: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            color: #ff4444;
+            background: white;
+            padding: 2px 5px;
+            border: 1px solid #ff4444;
+            border-radius: 3px;
+            will-change: transform;
+            backface-visibility: hidden;
+        }
+        
+        /* Arrow styles */
+        .arrow {
+            position: absolute;
+            top: 1in;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 5in;
+        }
+        
+        .stats {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 5px;
+        }
+        
+        .complete-message {
+            position: absolute;
+            bottom: 200px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff4444;
+            padding: 20px;
+        }
+        
+        .footer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            padding: 40px 20px;
+            background: #fff;
+            border-top: 1px solid #ddd;
+        }
+        
+        .footer h2 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 28px;
+            font-weight: 400;
+        }
+        
+        .footer .highlight {
+            color: #ff4444;
+            font-weight: 600;
+        }
+        
+        .social-links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 24px;
+        }
+        
+        .social-link {
+            color: #333;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 2px solid #333;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        
+        .social-link:hover {
+            background: #333;
+            color: #fff;
+        }
+
+        .content {
+            margin-left: 140px;
+            padding: 40px;
+            max-width: 800px;
+            height: calc(3960in + 250px); /* Compact footer space */
+        }
+
+        .title {
+            font-size: 48px;
+            font-weight: 300;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .subtitle {
+            font-size: 24px;
+            color: #666;
+            margin-bottom: 40px;
+        }
+
+        /* Clean layout */
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="ruler-container">
+            <div class="ruler"></div>
+            <div class="inch-labels" id="labels"></div>
+        </div>
+        
+        <div class="content">
+            <div class="arrow">
+                <svg width="200" height="100%" viewBox="0 0 200 480" preserveAspectRatio="none">
+                    <!-- Gradient definition -->
+                    <defs>
+                        <linearGradient id="arrowGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" style="stop-color:#000;stop-opacity:0" />
+                            <stop offset="50%" style="stop-color:#000;stop-opacity:0.3" />
+                            <stop offset="100%" style="stop-color:#000;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <!-- Main arrow with gradient -->
+                    <path d="
+                        M 60 0
+                        L 60 340
+                        L 10 340
+                        L 100 480
+                        L 190 340
+                        L 140 340
+                        L 140 0
+                        Z
+                    " stroke="none" fill="url(#arrowGradient)"/>
+                </svg>
+            </div>
+            <div id="stats" class="stats"></div>
+            
+            <div class="complete-message">
+                🏁 110 YARDS COMPLETE! 🏁
+            </div>
+            
+            <footer class="footer">
+                <h2>Gareth Lloyd <span class="highlight">(110yd)</span></h2>
+                <div class="social-links">
+                    <a href="https://fosstodon.org/@glloyd" target="_blank" class="social-link" rel="me">Mastodon</a>
+                    <a href="https://github.com/Ignition" target="_blank" class="social-link">GitHub</a>
+                    <a href="https://www.linkedin.com/in/gareth-lloyd/" target="_blank" class="social-link">LinkedIn</a>
+                    <a href="https://www.meetup.com/ACCU-York/" target="_blank" class="social-link">ACCU York</a>
+                </div>
+            </footer>
+        </div>
+        
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            TOTAL_INCHES: 3960,
+            BUFFER_INCHES: 3,
+            MARK_WIDTHS: {
+                yard: '100%',
+                inch: '50px',
+                half: '35px', 
+                quarter: '25px',
+                eighth: '15px'
+            },
+            COLORS: {
+                mark: '#333',
+                yard: '#ff4444'
+            }
+        };
+        
+        // DOM elements
+        const elements = {
+            ruler: document.querySelector('.ruler'),
+            labels: document.getElementById('labels')
+        };
+        
+        // Application state
+        const state = {
+            renderedElements: new Map(),
+            currentStartInch: -1,
+            cssInchPixels: 96,
+            rafId: null,
+            inchTemplate: null
+        };
+        
+        // Get subdivision type based on eighth position
+        function getSubdivisionType(eighth) {
+            if (eighth === 4) return 'half';
+            if (eighth === 2 || eighth === 6) return 'quarter';
+            return 'eighth';
+        }
+        
+        // Create reusable inch template with all subdivisions
+        function createSubdivisionTemplate() {
+            const template = document.createElement('div');
+            template.className = 'inch-template';
+            template.style.cssText = `position: absolute; width: 100%; height: ${state.cssInchPixels}px;`;
+            
+            // Add subdivision marks
+            for (let eighth = 1; eighth < 8; eighth++) {
+                const mark = document.createElement('div');
+                const type = getSubdivisionType(eighth);
+                mark.className = `ruler-mark ${type}`;
+                
+                const offset = Math.round((eighth / 8) * state.cssInchPixels);
+                mark.style.cssText = `position: absolute; top: ${offset}px; right: 0; background: ${CONFIG.COLORS.mark}; height: 1px;`;
+                
+                template.appendChild(mark);
+            }
+            
+            return template;
+        }
+        
+        // Measure actual CSS inch size and initialize template
+        function initializeMeasurements() {
+            const test = document.createElement('div');
+            test.style.cssText = 'height:1in;position:absolute;visibility:hidden';
+            document.body.appendChild(test);
+            state.cssInchPixels = test.offsetHeight;
+            document.body.removeChild(test);
+            
+            state.inchTemplate = createSubdivisionTemplate();
+        }
+        
+        // Create positioned ruler mark
+        function createPositionedMark(inch, eighth = 0, type) {
+            const mark = document.createElement('div');
+            mark.className = `ruler-mark ${type}`;
+            
+            const exactPosition = (inch + eighth / 8) * state.cssInchPixels;
+            const position = Math.round(exactPosition);
+            mark.style.top = `${position}px`;
+            
+            return mark;
+        }
+        
+        // Create positioned label
+        function createPositionedLabel(inch, text, isYard = false) {
+            const label = document.createElement('div');
+            label.className = isYard ? 'yard-label' : 'inch-label';
+            
+            const exactPosition = inch * state.cssInchPixels;
+            const position = Math.round(exactPosition);
+            
+            if (isYard) {
+                label.style.top = `${position - 10}px`;
+                label.style.left = '50%';
+                label.style.transform = 'translateX(-50%)';
+            } else {
+                label.style.top = `${position - 6}px`;
+                const isEmphasized = inch % 6 === 0;
+                label.style.fontSize = isEmphasized ? '11px' : '9px';
+                label.style.fontWeight = isEmphasized ? 'bold' : 'normal';
+            }
+            
+            label.textContent = text;
+            return label;
+        }
+        
+        // Update virtual scrolling with optimized range checking
+        function updateVirtualScrolling() {
+            const scrollTop = window.pageYOffset;
+            const viewportHeight = window.innerHeight;
+            
+            // Calculate visible range
+            const startInch = Math.max(0, Math.floor(scrollTop / state.cssInchPixels) - CONFIG.BUFFER_INCHES);
+            const endInch = Math.min(CONFIG.TOTAL_INCHES, Math.ceil((scrollTop + viewportHeight) / state.cssInchPixels) + CONFIG.BUFFER_INCHES);
+            
+            // Skip if range hasn't changed  
+            if (state.currentStartInch === startInch) return;
+            
+            // Aggressive cleanup - remove elements outside viewport + buffer
+            const cleanupStart = startInch;
+            const cleanupEnd = endInch;
+            state.currentStartInch = startInch;
+            
+            // Update stats display
+            const stats = document.getElementById('stats');
+            if (stats) {
+                // Count actual top-level elements, not nested marks
+                const templates = document.querySelectorAll('.inch-template').length;
+                const marks = document.querySelectorAll('.ruler > .ruler-mark').length;
+                const labels = document.querySelectorAll('.inch-label, .yard-label').length;
+                const totalMarks = document.querySelectorAll('.ruler-mark').length;
+                
+                stats.innerHTML = `Virtual Scrolling:<br>` +
+                    `Range: ${startInch}-${endInch}"<br>` +
+                    `Templates: ${templates}<br>` +
+                    `Main marks: ${marks}<br>` +
+                    `Labels: ${labels}<br>` +
+                    `Total marks: ${totalMarks}<br>` +
+                    `Tracked: ${state.renderedElements.size}`;
+            }
+            
+            // Batch remove elements outside range
+            const elementsToRemove = [];
+            for (const [key, element] of state.renderedElements) {
+                // Extract inch number from key (handles both old and new format)
+                const match = key.match(/^(\d+)-/);
+                if (!match) continue;
+                
+                const elementInch = parseInt(match[1]);
+                // Remove elements well outside the buffer zone
+                if (elementInch < cleanupStart || elementInch > cleanupEnd) {
+                    elementsToRemove.push(key);
+                }
+            }
+            
+            // Remove in batch to minimize reflows
+            for (const key of elementsToRemove) {
+                const element = state.renderedElements.get(key);
+                element.remove();
+                state.renderedElements.delete(key);
+            }
+            
+            // Batch add elements in range using template cloning
+            const rulerFragment = document.createDocumentFragment();
+            const labelsFragment = document.createDocumentFragment();
+            let hasNewElements = false;
+            
+            for (let inch = startInch; inch <= endInch; inch++) {
+                const isYardMarker = inch > 0 && inch % 36 === 0;
+                const inchKey = `${inch}-template`;
+                
+                // Skip if already rendered
+                if (state.renderedElements.has(inchKey)) continue;
+                
+                // For non-final inches, use the template for subdivisions
+                if (inch < CONFIG.TOTAL_INCHES) {
+                    // Clone the template instead of creating individual marks
+                    const inchBlock = state.inchTemplate.cloneNode(true);
+                    inchBlock.style.top = `${inch * state.cssInchPixels}px`;
+                    inchBlock.dataset.inch = inch;
+                    rulerFragment.appendChild(inchBlock);
+                    state.renderedElements.set(inchKey, inchBlock);
+                }
+                
+                // Main marks and labels
+                if (isYardMarker) {
+                    // Yard mark
+                    const mark = createPositionedMark(inch, 0, 'yard');
+                    rulerFragment.appendChild(mark);
+                    state.renderedElements.set(`${inch}-yard`, mark);
+                    
+                    // Yard label
+                    const label = createPositionedLabel(inch, `${inch / 36} yd`, true);
+                    labelsFragment.appendChild(label);
+                    state.renderedElements.set(`${inch}-yardlabel`, label);
+                } else {
+                    // Inch mark
+                    const mark = createPositionedMark(inch, 0, 'inch');
+                    rulerFragment.appendChild(mark);
+                    state.renderedElements.set(`${inch}-inch`, mark);
+                    
+                    // Inch label
+                    if (inch !== 0) {
+                        const label = createPositionedLabel(inch, inch % 36);
+                        labelsFragment.appendChild(label);
+                        state.renderedElements.set(`${inch}-label`, label);
+                    }
+                }
+                
+                hasNewElements = true;
+            }
+            
+            // Append fragments in single DOM operation
+            if (hasNewElements) {
+                elements.ruler.appendChild(rulerFragment);
+                elements.labels.appendChild(labelsFragment);
+            }
+        }
+        
+        // Main scroll update function with RAF debouncing
+        function updateRuler() {
+            if (state.rafId) return; // Skip if already scheduled
+            
+            state.rafId = requestAnimationFrame(() => {
+                const scrollY = window.pageYOffset;
+                // Round scroll position to avoid subpixel jitter
+                const roundedScroll = Math.round(scrollY * 2) / 2;
+                
+                // Move ruler with scroll - this is fast
+                elements.ruler.style.transform = `translateY(${-roundedScroll}px) translateZ(0)`;
+                elements.labels.style.transform = `translateY(${-roundedScroll}px) translateZ(0)`;
+                
+                // Update virtual scrolling - this is expensive
+                updateVirtualScrolling();
+                
+                state.rafId = null;
+            });
+        }
+        
+        // Initialize
+        initializeMeasurements();
+        updateVirtualScrolling(); // Force initial render
+        updateRuler();
+        
+        // Handle scroll
+        window.addEventListener('scroll', updateRuler);
+    </script>
+</body>
+</html>
